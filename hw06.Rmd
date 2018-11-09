@@ -10,21 +10,212 @@ library(tidyverse)
 
 The tasks I chose are
 
-1. Character Data
+1. Trump's Android Tweets
 2. Writing your own function
 
-## Task 1: Character Data
+## Task 1: Trump's Android Tweets
 
-TBD
+```{r}
+library(purrr)
+suppressMessages(library(dplyr))
+library(tibble)
+```
 
+```{r}
+load("trump_tweets_df.rda")
+tweets <- trump_tweets_df$text
+tweets %>% head() %>% strtrim(200)
+```
+
+### Trump Android Words
+
+These are the words that were shown to be associated with Trump's tweets from an Android device. 
+
+```{r}
+regex <- "badly|crazy|weak|spent|strong|dumb|joke|guns|funny|dead"
+```
+
+### Downscaling
+
+The following set of data has all the complexity that is required for this problem. 
+
+```{r}
+tweets_small = tweets[c(1, 2,5, 6, 198, 347, 919)];
+tweets_small
+```
+
+### `gregexpr`
+
+```{r}
+matches <- gregexpr(regex, tweets_small)
+str(matches)
+```
+
+We see that this is not very helpful in the context of trying to find the actual matches. It seems that the index is `-1` if no matches are found and a positive number otherwise. But this still requires a lot of post-processing and is even worse than linux's `grep` command. 
+
+### The `substring` function
+
+I found this section rather confusing. come back to it later. 
+
+
+### Getting to know the list
+```{r}
+lengths(matches) 
+# purrr way
+map_int(matches, length)
+```
+
+From the exercise, copied verbatim: 
+
+> Exercise: Get a list of the match lengths.
+> Each element of matches carries this information in an attribute named match.length(). Store this info in a list called match_length.
+> 
+> 1. Pick one nontrivial example, e.g. m <- matches[[7]].
+>
+> 2. Get the attribute named match.length. Hint: attr().
+>
+> 3. Drop that approach into purrr::map() to scale up to the full matches list.
+
+Here's how to do the task for just the first element of `matches`: 
+
+```{r}
+m <- matches[[1]]
+attr(m, which = "match.length")
+```
+
+Here are the ways that were listed in the exercise: 
+
+```{r}
+ml <- function(x) attr(x, which = "match.length")
+map(matches, ml)
+```
+
+```{r}
+map(matches, ~ attr(.x, which = "match.length"))
+```
+
+```{r}
+(match_length <- map(matches, attr, which = "match.length"))
+```
+
+Count the number of Trump android words in each tweet: 
+
+Unfortunately, this isn't quite `length(matches)`. There is a different way to do this, as shown: 
+
+First on one example: 
+
+```{r}
+m <- matches[[1]]
+sum(m > 0)
+```
+
+```{r}
+m <- matches[[7]]
+sum(m > 0)
+```
+
+And then on the entire list: 
+
+```{r}
+f <- function(x) sum(x > 0)
+map(matches, f)
+```
+```{r}
+map(matches, ~ sum(.x > 0))
+```
+
+Tweak your existing approach to return an integer vector, with length equal to the number of tweets.
+ 
+```{r}
+map_int(matches, ~sum(.x > 0))
+```
+
+```{r}
+tibble(
+  naive_length = lengths(matches),
+  n_words = map_int(matches, ~ sum(.x > 0))
+)
+```
+
+ 
+### Strip the attributes from `matches`
+
+```{r}
+(match_first <- map(matches, as.vector))
+```
+
+```{r}
+(tweet <- tweets_small[7])
+```
+
+```{r}
+(t_first <- match_first[[7]])
+```
+
+```{r}
+(t_length <- match_length[[7]])
+```
+```{r}
+(t_last <- t_first + t_length - 1)
+```
+
+```{r}
+substring(tweet, t_first, t_last)
+```
+
+### Store where Trump words end
+
+```{r}
+(match_last <- map2(match_first, match_length, ~ .x + .y - 1))
+```
+
+### Extract Trump words
+
+```{r}
+pmap(list(text = tweets_small, first = match_first, last = match_last), substring)
+```
+
+### Using a data-frame
+
+```{r}
+mdf <- tibble(
+  text = tweets_small,
+  first = match_first,
+  last = match_last
+)
+pmap(mdf, substring)
+
+```
+
+Let's take it all from the beginning in a single code-block: 
+
+```{r}
+matches = tibble(text = tweets_small,
+       first = gregexpr(regex, tweets_small)) %>% 
+  mutate(match_length = map(first, ~ attr(.x, which = "match.length")),
+         last = map2(first, match_length, ~ .x + .y - 1)) %>%
+  select(-match_length) %>% 
+  pmap(substring) 
+matches
+```
+
+### Appendix
+
+Actually, you can just use the line
+```{r}
+matches = regmatches(tweets, gregexpr(regex, tweets)); 
+matches[lapply(matches, length) > 0]
+```
+
+which shows all the matches in Trump's tweets
 
 ## Task 2: Writing your own function
 
-For this task my choice is to implement `pagerank` algorithm. Pagerank is used in directed graphical models to rank the importance of nodes. Specifically, it is applied in web search by google to rank web pages by order of importance. 
+For this task my choice is to implement `pagerank` algorithm. Pagerank is used in directed graphical models to rank the importance of nodes. Specifically, it is applied in web search by google to rank web pages by order of importance. There are also applications of pagerank in social networks.  
 
 ```{r}
 ## Pagerank algorithm
-# returns a vector of the rank of each page 
+# returns a vector of the rank of each page, followed by the weightings of each page
 pagerank <- function(A, tol = 1e-8) {
   n <- nrow(A);
   d <- rep(1/n, n);
@@ -57,7 +248,6 @@ probs = x[(m+1):(2*m)]
 df = data.frame(label, probs, ranks)
 ```
 
-  
 Now let's try visualizing the graph:
 
 ```{r}
@@ -72,6 +262,7 @@ ggplot(df, aes(x="",y=probs, fill=label)) +
 We can put this code into another function: 
 
 ```{r}
+# Visualizes the distribution of time spent on each webpage
 plot_distribution = function(A) {
   x = pagerank(A);
   n = length(x);
@@ -94,4 +285,3 @@ Then, we can re-run the code with just with the matrix as input:
 ```{r}
 plot_distribution(A)
 ```
-
